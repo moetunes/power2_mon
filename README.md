@@ -13,13 +13,17 @@
 ###Usage
 -----
 
-**power2_mon** will continually poll the battery status(every 5 min by default)
-    It will check the status, if the battery is below MIN_PERCENT, above MAX+PERCENT
-    or charged it pops up a small window (click anywhere in the window to close it),
-    then exits.
+**power2_mon** will continually poll the battery status(every 5 min by default).
+    It will check the status, if the battery is below MIN_PERCENT, above MAX_PERCENT
+    or charged it pops up a small window (click anywhere in the window to close it).
 
 **power2_mon** should be launched from ~/.xinitrc or the window
     managers' autostart facility.
+
+**e.g.**
+
+    * [ "`ps -C power_mon -o pid=`" != "" ] || \
+    * ~/build/power2_mon/power2_mon &
 
 ###Installation
 ------------

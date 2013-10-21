@@ -25,16 +25,16 @@
 
 #define SYS_FILE "/sys/class/power_supply/BAT0/uevent"
 #define MIN_PERCENT 25
-/* 0 or 100 for full charge */
-#define MAX_PERCENT 90
+/* 100 for full charge */
+#define MAX_PERCENT 95
 #define SEARCHTERM1 "POWER_SUPPLY_STATUS"
 #define SEARCHTERM2 "POWER_SUPPLY_CHARGE_FULL="
 #define SEARCHTERM3 "POWER_SUPPLY_CHARGE_NOW="
 
-static unsigned int SLEEP_TIME = 300;
+static unsigned int SLEEP_TIME = 30;
 static char *text = "FILE";
 static char text1[30] = "ERROR";
-static 	Window win;
+static Window win;
 static void info_return();
 static void *event_loop();
 static void wait_to_read();
@@ -73,6 +73,7 @@ void *event_loop() {
         /* exit if a button is pressed inside the window */
 		case ButtonPress:
             quit_window();
+            break;
 		}
 	}
 	return 0;
@@ -126,6 +127,7 @@ void window_loop(){
 void quit_window() {
     win_run = 1;
     XUnmapWindow(dis, win);
+    XFlush(dis);
     XCloseDisplay(dis);
     return;
 }
@@ -148,7 +150,6 @@ void info_return() {
             * first search term to match */
             if(strstr(buffer,SEARCHTERM1) != NULL) {
                 battstatus = strstr(buffer, "=");
-                //printf("%s\n", battstatus);
                 if(strcmp(battstatus, "=Discharging\n") == 0)
                     battdo = 2;
                 else if(strcmp(battstatus, "=Charging\n") == 0)
@@ -182,14 +183,20 @@ void info_return() {
         }
 
         dummy = ((float)nowcharge/fullcharge)*100;
-        /*if(battdo == 2 && win_run == 0 && dummy > MIN_PERCENT) {
-            quit_window();
+        if(win_run == 0 && ((battdo == 2 && dummy > MIN_PERCENT) ||
+          battdo == 1)) {
+            XEvent e;
+            e.type = ButtonPress;
+            e.xbutton.button = Button1;
+            e.xbutton.same_screen = True;
+            XSendEvent(dis, win, True, 0xfff, &e);
+            XFlush(dis);
             return;
-        } */
+        }
         if(dummy >= MAX_PERCENT) battdo = 3;
         /* if the battery is above MIN_PERCENT don't show the window
            unless it's above MAX_PERCENT or charged */
-        if((dummy <= MIN_PERCENT && battdo == 2) || battdo > 2) {
+        if((dummy <= MIN_PERCENT && battdo == 2) || battdo > 2 || win_run == 0) {
             if(battdo == 2) text = "Power Supply Discharging";
             else if(battdo == 3) text = "Power Supply Charged";
             else if(battdo == 4) text = "Power Supply Full";
@@ -218,8 +225,10 @@ void wait_to_read() {
     ret = select(2,&set,NULL,NULL,&timeout);
     if(ret == 0)
         return;
-    else
+    else {
+        fprintf(stderr, "POWER2_MON:: Timer Fail\nPOWER2_MON:: EXITING\n");
         exit(1);
+    }
 }
 
 int main() {
