@@ -24,6 +24,9 @@
 #include <pthread.h>
 
 #define SYS_FILE "/sys/class/power_supply/BAT0/uevent"
+// 0 to log events, 1 to not
+#define LOGGING 0
+#define LOG_FILE "/home/pnewm/documents/logs/power2_mon.log"
 #define MIN_PERCENT 25
 /* 100 for full charge */
 #define MAX_PERCENT 95
@@ -31,16 +34,17 @@
 #define SEARCHTERM2 "POWER_SUPPLY_CHARGE_FULL="
 #define SEARCHTERM3 "POWER_SUPPLY_CHARGE_NOW="
 
-static unsigned int SLEEP_TIME = 30;
+static unsigned int SLEEP_TIME = 300;
 static char *text = "FILE";
 static char text1[30] = "ERROR";
 static Window win;
 static void info_return();
 static void *event_loop();
+static void log_event(char *msg, unsigned int perc);
 static void wait_to_read();
 static void quit_window();
 static unsigned int text_width, text_width1, texty, win_run;
-static unsigned int screen_num, width, height;
+static unsigned int screen_num, width, height, battdo, oldbattdo;
 static unsigned long background, border;
 static XEvent ev;
 static Display *dis;
@@ -124,6 +128,30 @@ void window_loop(){
     }
 }
 
+void log_event(char *msg, unsigned int perc) {
+    FILE *logfile;
+    logfile = fopen(LOG_FILE, "a");
+    if(logfile == NULL) {
+        fprintf(stderr, "POWER2_MON:: LOG FILE FAIL\n");
+        return;
+    }
+
+    struct tm tm;
+    time_t time_value = time(0);
+    tm = *localtime(&time_value);
+    fprintf(logfile, "%d.%d.%d.%d.%d.%d - %s %d%%\n",
+            (tm.tm_year+1900),
+            tm.tm_mon,
+            tm.tm_mday,
+            tm.tm_hour,
+            tm.tm_min,
+            tm.tm_sec, msg, perc);
+
+    fclose(logfile);
+    //fprintf(stderr, "POWER2_MON:: Wrote to Log File\n");
+    return;
+}
+
 void quit_window() {
     win_run = 1;
     XUnmapWindow(dis, win);
@@ -134,9 +162,9 @@ void quit_window() {
 
 void info_return() {
     FILE *Batt;
-    char  buffer[80];
+    char buffer[80];
     char *battstatus, *chargenow, *lastfull;
-    unsigned int battdo = 0, dummy;
+    unsigned int dummy;
     long nowcharge, fullcharge;
 
     Batt = fopen( SYS_FILE, "r" ) ;
@@ -145,6 +173,7 @@ void info_return() {
         window_loop();
         return;
     } else {
+        oldbattdo = battdo; battdo = 0;
         while(fgets(buffer,sizeof buffer,Batt) != NULL) {
             /* Now look for info
             * first search term to match */
@@ -183,6 +212,25 @@ void info_return() {
         }
 
         dummy = ((float)nowcharge/fullcharge)*100;
+        if(LOGGING == 0) {
+            switch(oldbattdo) {
+                case 0 :
+                    log_event("First Run", dummy);
+                    break;
+                case 2 :
+                    if(battdo == 1) log_event("Now Charging", dummy);
+                    break;
+                case 1 :
+                    if(battdo == 2) log_event("Now Discharging", dummy);
+                    break;
+                case 3 : case 4 :
+                    if(battdo == 2) log_event("Now Discharging from Full", dummy);
+                    break;
+                default :
+                    break;
+            }
+        }
+
         if(win_run == 0 && ((battdo == 2 && dummy > MIN_PERCENT) ||
           battdo == 1)) {
             XEvent e;
@@ -232,13 +280,13 @@ void wait_to_read() {
 }
 
 int main() {
-    win_run = 1;
+    win_run = 1; battdo = 0;
     for(;;) {
-        wait_to_read();
         info_return();
         if(win_run == 1 && pth) {
             pthread_cancel(pth);
         }
+        wait_to_read();
     }
     XFreeGC(dis, pen);
     XFreeFont(dis, font);
